@@ -1,0 +1,165 @@
+{
+  "name": "aiora-code-agent",
+  "displayName": "Aiora Code Agent",
+  "description": "Production-ready MVP AI coding assistant for VS Code powered by OpenRouter.",
+  "version": "0.2.0",
+  "publisher": "aiora",
+  "license": "MIT",
+  "files": [
+    "out/**",
+    "media/**",
+    "node_modules/diff/**",
+    "package.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other",
+    "Machine Learning",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "ai",
+    "agent",
+    "openrouter",
+    "assistant",
+    "coding"
+  ],
+  "activationEvents": [
+    "onCommand:aioraCodeAgent.openChat",
+    "onCommand:aioraCodeAgent.configureApiKey",
+    "onView:aioraCodeAgent.chatView"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "aioraCodeAgent.openChat",
+        "title": "Aiora Code Agent: Open Chat"
+      },
+      {
+        "command": "aioraCodeAgent.configureApiKey",
+        "title": "Aiora Code Agent: Configure OpenRouter API Key"
+      },
+      {
+        "command": "aioraCodeAgent.openDiffPreview",
+        "title": "Aiora Code Agent: Open Diff Preview"
+      },
+      {
+        "command": "aioraCodeAgent.approvePendingChanges",
+        "title": "Aiora Code Agent: Approve Pending Changes"
+      },
+      {
+        "command": "aioraCodeAgent.rejectPendingChanges",
+        "title": "Aiora Code Agent: Reject Pending Changes"
+      },
+      {
+        "command": "aioraCodeAgent.resetConversation",
+        "title": "Aiora Code Agent: Reset Conversation"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "aioraCodeAgentSidebar",
+          "title": "Aiora",
+          "icon": "media/aiora-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "aioraCodeAgentSidebar": [
+        {
+          "type": "webview",
+          "id": "aioraCodeAgent.chatView",
+          "name": "Code Agent"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Aiora Code Agent",
+      "properties": {
+        "aioraCodeAgent.model": {
+          "type": "string",
+          "default": "openrouter/free",
+          "enum": [
+            "openrouter/free",
+            "openrouter/owl-alpha",
+            "nex-agi/nex-n2-pro:free",
+            "poolside/laguna-m.1:free",
+            "openai/gpt-oss-120b:free",
+            "anthropic/claude-3.5-sonnet",
+            "openai/gpt-5",
+            "google/gemini-2.5-pro",
+            "deepseek/deepseek-chat"
+          ],
+          "description": "OpenRouter model used by Aiora Code Agent."
+        },
+        "aioraCodeAgent.provider": {
+          "type": "string",
+          "default": "openrouter",
+          "enum": [
+            "openrouter",
+            "openai",
+            "anthropic",
+            "google",
+            "ollama",
+            "groq",
+            "deepseek",
+            "qwen",
+            "mistral",
+            "xai",
+            "agentrouter"
+          ],
+          "description": "Model provider abstraction used by Aiora Code Agent. The current MVP runtime is implemented for OpenRouter."
+        },
+        "aioraCodeAgent.baseUrl": {
+          "type": "string",
+          "default": "https://openrouter.ai/api/v1",
+          "description": "Base URL for the OpenRouter API."
+        },
+        "aioraCodeAgent.maxIterations": {
+          "type": "number",
+          "default": 6,
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Maximum tool-calling iterations per agent run."
+        },
+        "aioraCodeAgent.maxContextFiles": {
+          "type": "number",
+          "default": 6,
+          "minimum": 1,
+          "maximum": 20,
+          "description": "Maximum number of files to include during context discovery."
+        },
+        "aioraCodeAgent.allowTerminalCommands": {
+          "type": "boolean",
+          "default": true,
+          "description": "Allow the agent to propose and run validated terminal commands."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p ./",
+    "watch": "tsc -w -p ./",
+    "package": "vsce package",
+    "pretest": "npm run build",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/diff": "^7.0.1",
+    "@types/node": "^22.10.1",
+    "@types/vscode": "^1.95.0",
+    "@vscode/test-electron": "^2.5.2",
+    "mocha": "^11.1.0",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "diff": "^7.0.0"
+  }
+}

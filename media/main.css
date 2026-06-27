@@ -1,0 +1,333 @@
+:root {
+  color-scheme: light dark;
+  --bg: var(--vscode-sideBar-background);
+  --panel: color-mix(in srgb, var(--vscode-editor-background) 90%, #113b2f 10%);
+  --panel-strong: color-mix(in srgb, var(--vscode-editor-background) 82%, #0f766e 18%);
+  --card: color-mix(in srgb, var(--vscode-editor-background) 94%, #0a0f0d 6%);
+  --border: var(--vscode-panel-border);
+  --text: var(--vscode-foreground);
+  --muted: var(--vscode-descriptionForeground);
+  --accent: #0f766e;
+  --accent-2: #f59e0b;
+  --danger: #b91c1c;
+  --radius: 16px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top right, rgba(245, 158, 11, 0.14), transparent 25%),
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.18), transparent 30%),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg) 80%, #06110d 20%), var(--bg));
+}
+
+#app {
+  padding: 14px;
+}
+
+.layout {
+  display: grid;
+  gap: 14px;
+}
+
+.topbar,
+.card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.topbar {
+  padding: 16px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 16px;
+  background:
+    linear-gradient(135deg, rgba(15, 118, 110, 0.2), rgba(245, 158, 11, 0.08)),
+    var(--panel-strong);
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  margin-top: 6px;
+  font-size: 24px;
+}
+
+.topbar p {
+  margin-top: 8px;
+  color: var(--muted);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 14px;
+}
+
+.panel.full {
+  grid-column: 1 / -1;
+}
+
+.card header {
+  padding: 14px 16px 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 10px;
+}
+
+.card-body {
+  padding: 16px;
+}
+
+.stack,
+.messages,
+.permissions {
+  display: grid;
+  gap: 10px;
+}
+
+textarea,
+select,
+input {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--vscode-input-background) 94%, transparent);
+  color: var(--text);
+  font: inherit;
+}
+
+textarea {
+  min-height: 120px;
+  resize: vertical;
+  padding: 14px;
+}
+
+select {
+  padding: 8px 10px;
+}
+
+input {
+  padding: 10px 12px;
+}
+
+.toolbar,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.compact {
+  margin-top: 8px;
+}
+
+button {
+  border: none;
+  border-radius: 999px;
+  padding: 9px 14px;
+  cursor: pointer;
+  font: inherit;
+}
+
+button.small {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.primary {
+  background: var(--accent);
+  color: white;
+}
+
+.secondary {
+  background: rgba(245, 158, 11, 0.18);
+  color: var(--text);
+}
+
+.ghost {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.message,
+.plan-item,
+.log-item,
+.change-card,
+.permission-row {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--panel);
+}
+
+.message.streaming {
+  border-style: dashed;
+}
+
+.message strong,
+.change-card strong,
+.log-item strong,
+.permission-row strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.permission-row {
+  display: grid;
+  grid-template-columns: 1fr 120px;
+  gap: 12px;
+  align-items: center;
+}
+
+.subtle,
+.empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.setup-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.setup-banner,
+.connection {
+  border-radius: 12px;
+  padding: 12px;
+  font-size: 12px;
+}
+
+.setup-banner {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.connection {
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.connection.success {
+  background: rgba(34, 197, 94, 0.14);
+  border-color: rgba(34, 197, 94, 0.32);
+}
+
+.connection.error {
+  background: rgba(185, 28, 28, 0.2);
+  border-color: rgba(185, 28, 28, 0.35);
+}
+
+.connection.testing {
+  background: rgba(14, 165, 233, 0.14);
+  border-color: rgba(14, 165, 233, 0.32);
+}
+
+.empty {
+  font-style: italic;
+}
+
+pre {
+  white-space: pre-wrap;
+  overflow-x: auto;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--vscode-textCodeBlock-background);
+}
+
+.status {
+  display: inline-flex;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  text-transform: capitalize;
+  margin-bottom: 8px;
+}
+
+.status.pending {
+  background: rgba(245, 158, 11, 0.18);
+}
+
+.status.in_progress {
+  background: rgba(14, 165, 233, 0.18);
+}
+
+.status.completed {
+  background: rgba(34, 197, 94, 0.18);
+}
+
+.status.failed,
+.status.blocked {
+  background: rgba(185, 28, 28, 0.24);
+}
+
+.error {
+  border: 1px solid rgba(185, 28, 28, 0.4);
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.24);
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.check-row input {
+  accent-color: var(--accent);
+}
+
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar {
+    flex-direction: column;
+  }
+
+  .permission-row {
+    grid-template-columns: 1fr;
+  }
+
+  .setup-grid {
+    grid-template-columns: 1fr;
+  }
+}
