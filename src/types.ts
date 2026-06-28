@@ -5,6 +5,7 @@ export type ChatRole = 'system' | 'user' | 'assistant' | 'tool';
 export interface ChatMessage {
   role: ChatRole;
   content: string;
+  images?: string[];
   name?: string;
   toolCallId?: string;
   toolCalls?: ToolCall[];
@@ -190,6 +191,7 @@ export interface WebviewState {
   maxIterations?: number;
   maxContextFiles?: number;
   allowTerminalCommands?: boolean;
+  permissionsNoticeDismissed?: boolean;
 }
 
 export interface OpenRouterToolDefinition {

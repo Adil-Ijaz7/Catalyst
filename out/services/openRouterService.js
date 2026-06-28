@@ -173,6 +173,19 @@ class OpenRouterService {
                         name: message.name
                     };
                 }
+                if (message.role === 'user' && message.images?.length) {
+                    const contentParts = [{ type: 'text', text: message.content }];
+                    for (const img of message.images) {
+                        contentParts.push({
+                            type: 'image_url',
+                            image_url: { url: img }
+                        });
+                    }
+                    return {
+                        role: 'user',
+                        content: contentParts
+                    };
+                }
                 return {
                     role: message.role,
                     content: message.content
@@ -230,6 +243,19 @@ class OpenRouterService {
                         content: message.content,
                         tool_call_id: message.toolCallId,
                         name: message.name
+                    };
+                }
+                if (message.role === 'user' && message.images?.length) {
+                    const contentParts = [{ type: 'text', text: message.content }];
+                    for (const img of message.images) {
+                        contentParts.push({
+                            type: 'image_url',
+                            image_url: { url: img }
+                        });
+                    }
+                    return {
+                        role: 'user',
+                        content: contentParts
                     };
                 }
                 return {

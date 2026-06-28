@@ -89,6 +89,7 @@ class ChatViewProvider {
         this.state.maxIterations = settings.maxIterations;
         this.state.maxContextFiles = settings.maxContextFiles;
         this.state.allowTerminalCommands = settings.allowTerminalCommands;
+        this.state.permissionsNoticeDismissed = this.permissionService.isNoticeDismissed();
         webview.html = this.getHtml(webview);
         webview.onDidReceiveMessage(async (message) => {
             switch (message.type) {
@@ -96,7 +97,19 @@ class ChatViewProvider {
                     this.postState();
                     break;
                 case 'submitPrompt':
-                    await this.handlePrompt(String(message.payload ?? ''));
+                    if (message.payload && typeof message.payload === 'object') {
+                        const data = message.payload;
+                        await this.handlePrompt(data.prompt, data.attachedFiles, data.attachedImages, data.autoContext);
+                    }
+                    else {
+                        await this.handlePrompt(String(message.payload ?? ''));
+                    }
+                    break;
+                case 'selectFile':
+                    await this.handleSelectFile();
+                    break;
+                case 'selectImage':
+                    await this.handleSelectImage();
                     break;
                 case 'approveChanges':
                     await this.applyPendingChanges(message.payload);
@@ -168,6 +181,11 @@ class ChatViewProvider {
                 case 'setPermissionMode':
                     await this.setPermissionMode(message.payload);
                     break;
+                case 'dismissPermissionsNotice':
+                    await this.permissionService.setNoticeDismissed(true);
+                    this.state.permissionsNoticeDismissed = true;
+                    this.postState();
+                    break;
                 case 'resetConversation':
                     this.agent.resetConversation();
                     this.messages.length = 0;
@@ -194,13 +212,54 @@ class ChatViewProvider {
         this.state.maxIterations = settings.maxIterations;
         this.state.maxContextFiles = settings.maxContextFiles;
         this.state.allowTerminalCommands = settings.allowTerminalCommands;
+        this.state.permissionsNoticeDismissed = this.permissionService.isNoticeDismissed();
         this.postState();
     }
-    async handlePrompt(prompt) {
-        if (!prompt.trim()) {
+    async handlePrompt(prompt, attachedFiles, attachedImages, autoContext) {
+        if (!prompt.trim() && (!attachedFiles || !attachedFiles.length) && (!attachedImages || !attachedImages.length)) {
             return;
         }
-        this.messages.push({ role: 'user', content: prompt });
+        // Construct the formatted prompt with file contents if present
+        let formattedPrompt = prompt;
+        if (attachedFiles && attachedFiles.length > 0) {
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+            formattedPrompt += '\n\n[Additional Context Files]';
+            for (const file of attachedFiles) {
+                try {
+                    const uri = workspaceFolder
+                        ? vscode.Uri.joinPath(workspaceFolder.uri, file.path)
+                        : vscode.Uri.file(file.path);
+                    const bytes = await vscode.workspace.fs.readFile(uri);
+                    const content = Buffer.from(bytes).toString('utf8');
+                    formattedPrompt += `\n\n--- File: ${file.path} ---\n${content}\n--- End File ---`;
+                }
+                catch (err) {
+                    formattedPrompt += `\n\n--- File: ${file.path} (Failed to read content) ---`;
+                }
+            }
+        }
+        // Read attached images as base64 data URLs
+        const base64Images = [];
+        if (attachedImages && attachedImages.length > 0) {
+            for (const img of attachedImages) {
+                try {
+                    const uri = vscode.Uri.file(img.path);
+                    const bytes = await vscode.workspace.fs.readFile(uri);
+                    const ext = img.path.split('.').pop() || 'png';
+                    const base64 = `data:image/${ext};base64,${Buffer.from(bytes).toString('base64')}`;
+                    base64Images.push(base64);
+                }
+                catch (err) {
+                    console.error('Failed to read image:', err);
+                }
+            }
+        }
+        // Add user message to history
+        const userMsg = { role: 'user', content: prompt };
+        if (base64Images.length > 0) {
+            userMsg.images = base64Images;
+        }
+        this.messages.push(userMsg);
         this.state = {
             ...this.state,
             busy: true,
@@ -210,7 +269,7 @@ class ChatViewProvider {
         };
         this.postState();
         try {
-            const result = await this.agent.run(prompt, {
+            const result = await this.agent.run(formattedPrompt, {
                 onProgress: (progress) => {
                     this.state = {
                         ...this.state,
@@ -244,6 +303,54 @@ class ChatViewProvider {
             };
             this.postState();
         }
+    }
+    async handleSelectFile() {
+        const uris = await vscode.window.showOpenDialog({
+            canSelectFiles: true,
+            canSelectFolders: false,
+            canSelectMany: true,
+            title: 'Select Files to Mention'
+        });
+        if (!uris || !uris.length) {
+            return;
+        }
+        const files = uris.map((uri) => {
+            const relativePath = vscode.workspace.asRelativePath(uri, false).replace(/\\/g, '/');
+            return {
+                path: relativePath,
+                name: relativePath.split('/').pop() || relativePath
+            };
+        });
+        this.view?.webview.postMessage({
+            type: 'filesSelected',
+            payload: files
+        });
+    }
+    async handleSelectImage() {
+        const uris = await vscode.window.showOpenDialog({
+            canSelectFiles: true,
+            canSelectFolders: false,
+            canSelectMany: true,
+            filters: {
+                'Images': ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg']
+            },
+            title: 'Select Images'
+        });
+        if (!uris || !uris.length) {
+            return;
+        }
+        const images = uris.map((uri) => {
+            const webviewUri = this.view?.webview.asWebviewUri(uri).toString() || '';
+            return {
+                path: uri.fsPath,
+                webviewUri,
+                name: vscode.workspace.asRelativePath(uri, false).split('/').pop() || 'image'
+            };
+        });
+        this.view?.webview.postMessage({
+            type: 'imagesSelected',
+            payload: images
+        });
     }
     async applyPendingChanges(payload) {
         const selectedIds = Array.isArray(payload)

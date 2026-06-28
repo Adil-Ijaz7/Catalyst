@@ -30,6 +30,15 @@ body {
   overflow: hidden;
 }
 
+#app {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+
 /* Tabs Header */
 .tabs {
   display: flex;
@@ -583,4 +592,35 @@ input:checked + .slider:before {
   border: 1px solid rgba(139, 92, 246, 0.3);
   color: var(--accent);
 }
+
+/* Add Context Dropdown styling */
+.context-dropdown {
+  min-width: 140px;
+}
+
+.dropdown-item {
+  transition: background-color 0.15s;
+}
+
+.dropdown-item:hover {
+  background: var(--border);
+}
+
+.composer-tool-btn {
+  color: var(--muted);
+  transition: color 0.15s;
+}
+
+.composer-tool-btn:hover {
+  color: var(--text);
+}
+
+.attachment-pill {
+  transition: border-color 0.15s;
+}
+
+.attachment-pill:hover {
+  border-color: var(--accent) !important;
+}
+
 

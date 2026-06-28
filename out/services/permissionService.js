@@ -192,6 +192,12 @@ class PermissionService {
         }
         return { allowed: true };
     }
+    isNoticeDismissed() {
+        return this.context.workspaceState.get('aiora.permissionsNoticeDismissed', false);
+    }
+    async setNoticeDismissed(dismissed) {
+        await this.context.workspaceState.update('aiora.permissionsNoticeDismissed', dismissed);
+    }
 }
 exports.PermissionService = PermissionService;
 //# sourceMappingURL=permissionService.js.map

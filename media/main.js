@@ -21,7 +21,11 @@
     error: undefined,
     maxIterations: 6,
     maxContextFiles: 6,
-    allowTerminalCommands: true
+    allowTerminalCommands: true,
+    permissionsNoticeDismissed: false,
+    attachedFiles: [],
+    attachedImages: [],
+    autoContext: true
   };
 
   function escapeHtml(value) {
@@ -83,6 +87,32 @@
     return html;
   }
 
+  function renderAttachments() {
+    if (!state.attachedFiles.length && !state.attachedImages.length) return '';
+    
+    const filesHtml = state.attachedFiles.map((file, idx) => `
+      <div class="attachment-pill file-pill" style="display: inline-flex; align-items: center; gap: 4px; background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-size: 11px;">
+        <span>📄 ${escapeHtml(file.name)}</span>
+        <span class="remove-attachment" data-remove-type="file" data-remove-idx="${idx}" style="cursor: pointer; color: var(--muted); margin-left: 2px; font-weight: bold;">&times;</span>
+      </div>
+    `).join('');
+
+    const imagesHtml = state.attachedImages.map((img, idx) => `
+      <div class="attachment-pill image-pill" style="position: relative; display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--panel); padding: 2px; height: 42px; width: 50px;">
+        <img src="${img.webviewUri}" style="height: 100%; width: 100%; object-fit: cover; border-radius: 4px;" />
+        <span class="remove-attachment" data-remove-type="image" data-remove-idx="${idx}" style="position: absolute; top: 0px; right: 2px; cursor: pointer; color: var(--danger); font-weight: bold; font-size: 14px; text-shadow: 0 0 2px black;">&times;</span>
+      </div>
+    `).join('');
+
+    return `
+      <div class="composer-attachments" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; border-bottom: 1px dashed var(--border); padding-bottom: 8px; width: 100%;">
+        ${filesHtml}
+        ${imagesHtml}
+      </div>
+    `;
+  }
+
+
   function renderPendingChanges() {
     if (!state.pendingChanges || !state.pendingChanges.length) return '';
 
@@ -120,6 +150,7 @@
   }
 
   function renderPermissions() {
+    if (state.permissionsNoticeDismissed) return '';
     const askCount = state.permissions.filter(p => p.mode === 'ask').length;
     if (askCount === 0) return '';
     return `
@@ -129,6 +160,9 @@
             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5l7 12H1l7-12zm-.5 9v1.5h1V10.5h-1zm0-4v3h1v-3h-1z"/></svg>
             Workspace Permissions
           </div>
+          <button class="ghost" data-action="dismissPermissionsNotice" style="padding: 2px; margin: -2px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; color: var(--muted); cursor: pointer;" title="Dismiss notice">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>
+          </button>
         </header>
         <div class="card-body">
           <div style="font-size: 12px; line-height: 1.4;">
@@ -271,19 +305,33 @@
             <div class="pill" data-action="resetConversation">🔄 Reset Chat</div>
           </div>
           
-          <div class="composer-input-area">
+          <div class="composer-input-area" style="position: relative;">
+            <div id="addContextDropdown" class="context-dropdown" style="display: none; position: absolute; bottom: 44px; left: 8px; background: var(--panel-strong); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 0; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
+              <div class="dropdown-item" id="dropdownAddFile" style="padding: 6px 12px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                <span>📄 Mention File</span>
+              </div>
+              <div class="dropdown-item" id="dropdownAddImage" style="padding: 6px 12px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                <span>🖼️ Attach Image</span>
+              </div>
+            </div>
+
+            ${renderAttachments()}
             <textarea id="prompt" placeholder="Ask anything or use '/' for commands" rows="1"></textarea>
             
             <div class="composer-bottom">
               <div class="composer-tools">
+                <button class="secondary" id="addContextBtn" style="padding: 2px 6px; border-radius: 4px; cursor: pointer; font-size: 11px; display: inline-flex; align-items: center; gap: 4px; height: 22px; background: transparent; color: var(--muted); border: 1px solid var(--border);" title="Add context (files, images)">
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/></svg>
+                  <span>Context</span>
+                </button>
                 <select id="modelSelect">
                   ${state.modelOptions.map((model) => `
                     <option value="${escapeHtml(model)}" ${model === state.model ? 'selected' : ''}>${escapeHtml(model)}</option>
                   `).join('')}
                 </select>
-                <span>Mention</span>
-                <span>Image</span>
-                <span>Auto</span>
+                <span class="composer-tool-btn" id="toolMention" style="cursor: pointer; font-size: 11px; display: inline-flex; align-items: center; gap: 2px;"><svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M14.5 3a.5.5 0 0 0-.5-.5H9.5a.5.5 0 0 0 0 1H13v3.5a.5.5 0 0 0 1 0V3zM1.5 13a.5.5 0 0 0 .5.5h4.5a.5.5 0 0 0 0-1H3v-3.5a.5.5 0 0 0-1 0V13zm12-3.5a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1 0-1H13v-2.5a.5.5 0 0 1 .5-.5zM3 3.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1H3.5v2.5a.5.5 0 0 1-1 0V3.5z"/></svg>Mention</span>
+                <span class="composer-tool-btn" id="toolImage" style="cursor: pointer; font-size: 11px; display: inline-flex; align-items: center; gap: 2px;"><svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M.002 3a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-12a2 2 0 0 1-2-2V3zm1 9l4-4 3 3 5-5 2 2V3a1 1 0 0 0-1-1h-12a1 1 0 0 0-1 1v9.586z"/></svg>Image</span>
+                <span class="composer-tool-btn" id="toolAuto" style="cursor: pointer; font-size: 11px; display: inline-flex; align-items: center; gap: 2px; color: ${state.autoContext ? 'var(--accent)' : 'var(--muted)'}"><svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 13a6 6 0 1 1 0-12 6 6 0 0 1 0 12z"/></svg>Auto</span>
               </div>
               <button class="send-btn" data-action="submitPrompt" ${state.busy ? 'disabled' : ''}>
                 <svg viewBox="0 0 16 16"><path d="M1 14.5l14-6.5-14-6.5 2.5 6.5L1 14.5z"/></svg>
@@ -308,18 +356,34 @@
         });
       }
 
-      // Bind prompt submittal
+      // Bind prompt submittal with attachments support
       app.querySelectorAll('[data-action]').forEach((button) => {
         button.addEventListener('click', () => {
           const action = button.getAttribute('data-action');
           if (action === 'submitPrompt') {
             const val = document.getElementById('prompt').value;
-            if(val) {
+            if (val.trim() || state.attachedFiles.length || state.attachedImages.length) {
               vscode.postMessage({
                 type: 'submitPrompt',
-                payload: val
+                payload: {
+                  prompt: val,
+                  attachedFiles: state.attachedFiles,
+                  attachedImages: state.attachedImages,
+                  autoContext: state.autoContext
+                }
               });
+              state.attachedFiles = [];
+              state.attachedImages = [];
+              document.getElementById('prompt').value = '';
+              render();
             }
+            return;
+          }
+
+          if (action === 'dismissPermissionsNotice') {
+            state.permissionsNoticeDismissed = true;
+            render();
+            vscode.postMessage({ type: 'dismissPermissionsNotice' });
             return;
           }
 
@@ -335,6 +399,61 @@
           }
         });
       });
+
+      // Bind remove attachment clicks
+      app.querySelectorAll('.remove-attachment').forEach((el) => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const type = el.getAttribute('data-remove-type');
+          const idx = parseInt(el.getAttribute('data-remove-idx'), 10);
+          if (type === 'file') {
+            state.attachedFiles.splice(idx, 1);
+          } else if (type === 'image') {
+            state.attachedImages.splice(idx, 1);
+          }
+          render();
+        });
+      });
+
+      // Bind Add Context Dropdown toggle
+      const addContextBtn = document.getElementById('addContextBtn');
+      const addContextDropdown = document.getElementById('addContextDropdown');
+      if (addContextBtn && addContextDropdown) {
+        addContextBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const isVisible = addContextDropdown.style.display === 'block';
+          addContextDropdown.style.display = isVisible ? 'none' : 'block';
+        });
+        
+        // Close dropdown when clicking elsewhere
+        document.addEventListener('click', () => {
+          addContextDropdown.style.display = 'none';
+        });
+      }
+
+      // Bind dropdown and toolbar buttons
+      const bindAction = (id, msgType) => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.addEventListener('click', () => {
+            vscode.postMessage({ type: msgType });
+          });
+        }
+      };
+
+      bindAction('toolMention', 'selectFile');
+      bindAction('dropdownAddFile', 'selectFile');
+      bindAction('toolImage', 'selectImage');
+      bindAction('dropdownAddImage', 'selectImage');
+
+      // Bind Auto context toggle
+      const toolAuto = document.getElementById('toolAuto');
+      if (toolAuto) {
+        toolAuto.addEventListener('click', () => {
+          state.autoContext = !state.autoContext;
+          render();
+        });
+      }
 
       const modelSelect = document.getElementById('modelSelect');
       if (modelSelect) {
@@ -446,6 +565,22 @@
   window.addEventListener('message', (event) => {
     if (event.data?.type === 'state') {
       Object.assign(state, event.data.payload);
+      render();
+    } else if (event.data?.type === 'filesSelected') {
+      const selected = event.data.payload;
+      selected.forEach(file => {
+        if (!state.attachedFiles.some(f => f.path === file.path)) {
+          state.attachedFiles.push(file);
+        }
+      });
+      render();
+    } else if (event.data?.type === 'imagesSelected') {
+      const selected = event.data.payload;
+      selected.forEach(img => {
+        if (!state.attachedImages.some(i => i.path === img.path)) {
+          state.attachedImages.push(img);
+        }
+      });
       render();
     }
   });

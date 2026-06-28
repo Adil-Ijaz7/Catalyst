@@ -172,4 +172,12 @@ export class PermissionService {
 
     return { allowed: true };
   }
+
+  public isNoticeDismissed(): boolean {
+    return this.context.workspaceState.get<boolean>('aiora.permissionsNoticeDismissed', false);
+  }
+
+  public async setNoticeDismissed(dismissed: boolean): Promise<void> {
+    await this.context.workspaceState.update('aiora.permissionsNoticeDismissed', dismissed);
+  }
 }
