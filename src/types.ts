@@ -187,6 +187,9 @@ export interface WebviewState {
   streamingText?: string;
   lastResponse?: string;
   error?: string;
+  maxIterations?: number;
+  maxContextFiles?: number;
+  allowTerminalCommands?: boolean;
 }
 
 export interface OpenRouterToolDefinition {

@@ -58,7 +58,10 @@ class ChatViewProvider {
         toolActivity: [],
         pendingChanges: [],
         permissions: [],
-        busy: false
+        busy: false,
+        maxIterations: 6,
+        maxContextFiles: 6,
+        allowTerminalCommands: true
     };
     constructor(extensionUri, agent, openRouterService, permissionService, diffPreviewPanel, pendingChangeDiffProvider) {
         this.extensionUri = extensionUri;
@@ -83,6 +86,9 @@ class ChatViewProvider {
         this.state.providerOptions = this.openRouterService.getProviderOptions();
         this.state.modelOptions = this.openRouterService.getModelOptions(settings.provider);
         this.state.permissions = this.permissionService.getRules();
+        this.state.maxIterations = settings.maxIterations;
+        this.state.maxContextFiles = settings.maxContextFiles;
+        this.state.allowTerminalCommands = settings.allowTerminalCommands;
         webview.html = this.getHtml(webview);
         webview.onDidReceiveMessage(async (message) => {
             switch (message.type) {
@@ -114,7 +120,17 @@ class ChatViewProvider {
                     await vscode.commands.executeCommand('workbench.action.openSettings', 'aioraCodeAgent');
                     break;
                 case 'setApiKey':
-                    await this.setApiKey();
+                    if (typeof message.payload === 'string') {
+                        await this.openRouterService.storeApiKey(message.payload);
+                        this.state.apiKeyConfigured = Boolean(message.payload.trim());
+                        this.state.connectionStatus = 'idle';
+                        this.state.connectionMessage = 'API key saved.';
+                        this.postState();
+                        void vscode.window.showInformationMessage('API key saved securely.');
+                    }
+                    else {
+                        await this.setApiKey();
+                    }
                     break;
                 case 'setProvider':
                     await this.setProvider(String(message.payload ?? ''));
@@ -124,6 +140,27 @@ class ChatViewProvider {
                     break;
                 case 'saveBaseUrl':
                     await this.saveBaseUrl(String(message.payload ?? ''));
+                    break;
+                case 'setMaxIterations':
+                    if (typeof message.payload === 'number') {
+                        const config = vscode.workspace.getConfiguration('aioraCodeAgent');
+                        await config.update('maxIterations', message.payload, vscode.ConfigurationTarget.Workspace);
+                        await this.refreshModel();
+                    }
+                    break;
+                case 'setMaxContextFiles':
+                    if (typeof message.payload === 'number') {
+                        const config = vscode.workspace.getConfiguration('aioraCodeAgent');
+                        await config.update('maxContextFiles', message.payload, vscode.ConfigurationTarget.Workspace);
+                        await this.refreshModel();
+                    }
+                    break;
+                case 'setAllowTerminalCommands':
+                    if (typeof message.payload === 'boolean') {
+                        const config = vscode.workspace.getConfiguration('aioraCodeAgent');
+                        await config.update('allowTerminalCommands', message.payload, vscode.ConfigurationTarget.Workspace);
+                        await this.refreshModel();
+                    }
                     break;
                 case 'testConnection':
                     await this.testConnection();
@@ -154,6 +191,9 @@ class ChatViewProvider {
         this.state.providerOptions = this.openRouterService.getProviderOptions();
         this.state.modelOptions = this.openRouterService.getModelOptions(settings.provider);
         this.state.permissions = this.permissionService.getRules();
+        this.state.maxIterations = settings.maxIterations;
+        this.state.maxContextFiles = settings.maxContextFiles;
+        this.state.allowTerminalCommands = settings.allowTerminalCommands;
         this.postState();
     }
     async handlePrompt(prompt) {

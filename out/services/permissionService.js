@@ -40,17 +40,17 @@ const DEFINITIONS = {
     read_files: {
         label: 'Read files',
         description: 'Read files inside the current workspace.',
-        defaultMode: 'allow'
+        defaultMode: 'ask'
     },
     modify_files: {
         label: 'Modify files',
         description: 'Edit existing files in the workspace.',
-        defaultMode: 'allow'
+        defaultMode: 'ask'
     },
     create_files: {
         label: 'Create files',
         description: 'Create new files in the workspace.',
-        defaultMode: 'allow'
+        defaultMode: 'ask'
     },
     rename_files: {
         label: 'Rename files',
@@ -65,7 +65,7 @@ const DEFINITIONS = {
     create_directories: {
         label: 'Create directories',
         description: 'Create directories in the workspace.',
-        defaultMode: 'allow'
+        defaultMode: 'ask'
     },
     delete_directories: {
         label: 'Delete directories',
