@@ -1,6 +1,6 @@
-# Aiora Code Agent
+# Catalyst
 
-Aiora Code Agent is a production-ready MVP VS Code extension that brings an AI-powered coding agent into your workspace. It combines a modular TypeScript backend, multi-provider model routing (OpenRouter-first), a responsive webview chat experience, staged file mutations, terminal tooling, diagnostics access, and diff approval before applying changes.
+Catalyst is a production-ready MVP VS Code extension that brings an AI-powered coding agent into your workspace. It combines a modular TypeScript backend, multi-provider model routing (OpenRouter-first), a responsive webview chat experience, staged file mutations, terminal tooling, diagnostics access, and diff approval before applying changes.
 
 ## Features
 
@@ -54,14 +54,14 @@ Aiora Code Agent is a production-ready MVP VS Code extension that brings an AI-p
 
 - `media/main.css`: responsive interface styling
 - `media/main.js`: webview state rendering and command dispatch
-- `media/aiora-icon.svg`: sidebar activity bar icon
+- `media/Catalyst-icon.svg`: sidebar activity bar icon
 
 ## Folder Structure
 
 ```text
 .
 |-- media/
-|   |-- aiora-icon.svg
+|   |-- Catalyst-icon.svg
 |   |-- catalyst-icon.png
 |   |-- catalyst-sidebar-icon.svg
 |   |-- main.css
@@ -109,16 +109,16 @@ Aiora Code Agent is a production-ready MVP VS Code extension that brings an AI-p
 
 ## Configuration
 
-Configure the extension from VS Code settings (`aioraCodeAgent.*`):
+Configure the extension from VS Code settings (`Catalyst.*`):
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `aioraCodeAgent.model` | string | `openrouter/free` | Model used by the agent. |
-| `aioraCodeAgent.provider` | string | `openrouter` | Model provider abstraction. |
-| `aioraCodeAgent.baseUrl` | string | `https://openrouter.ai/api/v1` | Base URL for the API. |
-| `aioraCodeAgent.maxIterations` | number | `6` | Maximum tool-calling iterations per run (1-12). |
-| `aioraCodeAgent.maxContextFiles` | number | `6` | Maximum files during context discovery (1-20). |
-| `aioraCodeAgent.allowTerminalCommands` | boolean | `true` | Allow the agent to propose and run terminal commands. |
+| `Catalyst.model` | string | `openrouter/free` | Model used by the agent. |
+| `Catalyst.provider` | string | `openrouter` | Model provider abstraction. |
+| `Catalyst.baseUrl` | string | `https://openrouter.ai/api/v1` | Base URL for the API. |
+| `Catalyst.maxIterations` | number | `6` | Maximum tool-calling iterations per run (1-12). |
+| `Catalyst.maxContextFiles` | number | `6` | Maximum files during context discovery (1-20). |
+| `Catalyst.allowTerminalCommands` | boolean | `true` | Allow the agent to propose and run terminal commands. |
 
 ### Supported Providers
 
@@ -138,7 +138,7 @@ Configure the extension from VS Code settings (`aioraCodeAgent.*`):
 
 Store your API key with the command:
 
-`Aiora Code Agent: Configure OpenRouter API Key`
+`Catalyst: Configure OpenRouter API Key`
 
 The key is stored securely in the VS Code secret store.
 
@@ -146,12 +146,12 @@ The key is stored securely in the VS Code secret store.
 
 | Command | Title |
 |---------|-------|
-| `aioraCodeAgent.openChat` | Aiora Code Agent: Open Chat |
-| `aioraCodeAgent.configureApiKey` | Aiora Code Agent: Configure OpenRouter API Key |
-| `aioraCodeAgent.openDiffPreview` | Aiora Code Agent: Open Diff Preview |
-| `aioraCodeAgent.approvePendingChanges` | Aiora Code Agent: Approve Pending Changes |
-| `aioraCodeAgent.rejectPendingChanges` | Aiora Code Agent: Reject Pending Changes |
-| `aioraCodeAgent.resetConversation` | Aiora Code Agent: Reset Conversation |
+| `Catalyst.openChat` | Catalyst: Open Chat |
+| `Catalyst.configureApiKey` | Catalyst: Configure OpenRouter API Key |
+| `Catalyst.openDiffPreview` | Catalyst: Open Diff Preview |
+| `Catalyst.approvePendingChanges` | Catalyst: Approve Pending Changes |
+| `Catalyst.rejectPendingChanges` | Catalyst: Reject Pending Changes |
+| `Catalyst.resetConversation` | Catalyst: Reset Conversation |
 
 ## Build Instructions
 
@@ -182,7 +182,7 @@ The integration tests spin up a local mock server and launch a VS Code test host
 - Streamed assistant text delivery
 - Staged file creation and apply
 - Subset apply and discard flows
-- Rich diff preview opening with the `aiora-diff` URI scheme
+- Rich diff preview opening with the `Catalyst-diff` URI scheme
 
 ## Packaging Instructions
 
@@ -213,7 +213,7 @@ This produces a `.vsix` file that can be installed locally in VS Code.
 The extension exports a programmatic API via `extension.activate()`:
 
 ```typescript
-interface AioraExtensionApi {
+interface CatalystExtensionApi {
   runPrompt(prompt: string, options?: AgentRunOptions): Promise<AgentRunResult>;
   getPendingChanges(): PendingWorkspaceChange[];
   applyPendingChanges(changeIds?: string[]): Promise<void>;
