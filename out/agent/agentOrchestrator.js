@@ -47,6 +47,7 @@ class AgentOrchestrator {
     permissionService;
     outputChannel;
     pendingChanges = [];
+    abortController = null;
     constructor(workspaceRoot, planner, contextManager, memory, toolRegistry, openRouterService, permissionService, outputChannel) {
         this.workspaceRoot = workspaceRoot;
         this.planner = planner;
@@ -67,67 +68,134 @@ class AgentOrchestrator {
         this.memory.clear();
         this.clearPendingChanges();
     }
+    stop() {
+        this.abortController?.abort();
+        this.abortController = null;
+    }
     async run(prompt, options) {
-        const settings = await this.openRouterService.getSettings();
-        let plan = this.planner.createPlan(prompt);
-        const context = await this.contextManager.buildSnapshot(this.workspaceRoot, prompt, settings.maxContextFiles);
-        plan = this.planner.markStep(plan, 'discover', 'completed');
-        plan = this.planner.markStep(plan, 'analyze', 'completed');
-        plan = this.planner.markStep(plan, 'execute', 'in_progress');
-        options?.onProgress?.({ plan });
-        const executor = new toolExecutor_1.ToolExecutor(this.toolRegistry, this.workspaceRoot, this.outputChannel, this.permissionService, (toolActivity) => {
-            options?.onProgress?.({ toolActivity });
-        });
-        const systemPrompt = this.buildSystemPrompt(context.workspaceRoot, settings.allowTerminalCommands);
-        const contextPrompt = this.buildContextPrompt(context);
-        this.memory.add({ role: 'user', content: prompt });
-        const workingMessages = [
-            { role: 'system', content: systemPrompt },
-            ...this.memory.getAll(),
-            { role: 'system', content: contextPrompt }
-        ];
-        let finalResponse = 'No response generated.';
-        for (let iteration = 0; iteration < settings.maxIterations; iteration += 1) {
-            const response = await this.openRouterService.chat(workingMessages, this.toolRegistry.toOpenRouterDefinitions(), (_delta, aggregate) => {
-                options?.onProgress?.({ streamingText: aggregate });
+        this.abortController = new AbortController();
+        const signal = this.abortController.signal;
+        // Dispatch start event
+        options?.onProgress?.({ event: { type: 'agent:start' } });
+        try {
+            const settings = await this.openRouterService.getSettings();
+            let plan = this.planner.createPlan(prompt);
+            options?.onProgress?.({ event: { type: 'agent:thinking:start', payload: 'Analyzing workspace context...' } });
+            const context = await this.contextManager.buildSnapshot(this.workspaceRoot, prompt, settings.maxContextFiles);
+            plan = this.planner.markStep(plan, 'discover', 'completed');
+            plan = this.planner.markStep(plan, 'analyze', 'completed');
+            plan = this.planner.markStep(plan, 'execute', 'in_progress');
+            options?.onProgress?.({ plan });
+            const executor = new toolExecutor_1.ToolExecutor(this.toolRegistry, this.workspaceRoot, this.outputChannel, this.permissionService, (toolActivity) => {
+                options?.onProgress?.({ toolActivity });
             });
-            const assistantMessage = this.toAssistantMessage(response);
-            workingMessages.push(assistantMessage);
-            if (assistantMessage.toolCalls?.length) {
-                for (const call of assistantMessage.toolCalls) {
-                    const result = await executor.execute({
-                        id: call.id,
-                        name: call.name,
-                        args: call.arguments
-                    }, true);
-                    if (result.workspaceChange) {
-                        this.pendingChanges = this.upsertPendingChange(result.workspaceChange);
-                        options?.onProgress?.({ pendingChanges: this.getPendingChanges() });
-                    }
-                    workingMessages.push({
-                        role: 'tool',
-                        name: call.name,
-                        toolCallId: call.id,
-                        content: result.content
-                    });
+            const systemPrompt = this.buildSystemPrompt(context.workspaceRoot, settings.allowTerminalCommands);
+            const contextPrompt = this.buildContextPrompt(context);
+            this.memory.add({ role: 'user', content: prompt });
+            const workingMessages = [
+                { role: 'system', content: systemPrompt },
+                ...this.memory.getAll(),
+                { role: 'system', content: contextPrompt }
+            ];
+            let finalResponse = '';
+            let hasResponded = false;
+            for (let iteration = 0; iteration < settings.maxIterations; iteration += 1) {
+                if (signal.aborted) {
+                    throw new Error('Agent run stopped by user.');
                 }
-                continue;
+                options?.onProgress?.({ event: { type: 'agent:thinking:start', payload: `Thinking (iteration ${iteration + 1})...` } });
+                const response = await this.openRouterService.chat(workingMessages, this.toolRegistry.toOpenRouterDefinitions(), (_delta, aggregate) => {
+                    options?.onProgress?.({
+                        streamingText: aggregate,
+                        event: { type: 'agent:thinking:update', payload: { delta: _delta, aggregate } }
+                    });
+                }, signal);
+                const assistantMessage = this.toAssistantMessage(response);
+                workingMessages.push(assistantMessage);
+                if (assistantMessage.content) {
+                    finalResponse += (hasResponded ? '\n\n' : '') + assistantMessage.content;
+                    hasResponded = true;
+                }
+                if (assistantMessage.toolCalls?.length) {
+                    for (const call of assistantMessage.toolCalls) {
+                        // Emit tool start and specific file operation events
+                        options?.onProgress?.({ event: { type: 'agent:tool:start', payload: { name: call.name, args: call.arguments } } });
+                        let fileEvent = null;
+                        if (call.name === 'read_file') {
+                            fileEvent = { type: 'agent:file:read', payload: { path: call.arguments.path } };
+                        }
+                        else if (call.name === 'write_file' || call.name === 'edit_file') {
+                            fileEvent = { type: 'agent:file:edit', payload: { path: call.arguments.path } };
+                        }
+                        else if (call.name === 'create_file') {
+                            fileEvent = { type: 'agent:file:create', payload: { path: call.arguments.path } };
+                        }
+                        else if (call.name === 'delete_file') {
+                            fileEvent = { type: 'agent:file:delete', payload: { path: call.arguments.path } };
+                        }
+                        else if (call.name === 'rename_file' || call.name === 'move_file') {
+                            fileEvent = { type: 'agent:file:rename', payload: { from: call.arguments.from, to: call.arguments.to } };
+                        }
+                        else if (call.name === 'copy_file') {
+                            fileEvent = { type: 'agent:file:create', payload: { path: call.arguments.to } };
+                        }
+                        if (fileEvent) {
+                            options?.onProgress?.({ event: fileEvent });
+                        }
+                        const result = await executor.execute({
+                            id: call.id,
+                            name: call.name,
+                            args: call.arguments
+                        }, true);
+                        // Handle verification & diff events
+                        if (result.verification) {
+                            options?.onProgress?.({ event: { type: 'agent:verification', payload: result.verification } });
+                        }
+                        if (result.workspaceChange) {
+                            this.pendingChanges = this.upsertPendingChange(result.workspaceChange);
+                            options?.onProgress?.({
+                                pendingChanges: this.getPendingChanges(),
+                                event: { type: 'agent:diff', payload: this.getPendingChanges() }
+                            });
+                        }
+                        options?.onProgress?.({ event: { type: 'agent:tool:end', payload: { name: call.name, result } } });
+                        workingMessages.push({
+                            role: 'tool',
+                            name: call.name,
+                            toolCallId: call.id,
+                            content: result.content
+                        });
+                    }
+                    continue;
+                }
+                break;
             }
-            finalResponse = assistantMessage.content;
-            break;
+            if (!hasResponded) {
+                finalResponse = 'Task completed with no output.';
+            }
+            plan = this.planner.markStep(plan, 'execute', 'completed');
+            plan = this.planner.markStep(plan, 'diff', this.pendingChanges.length ? 'completed' : 'pending');
+            plan = this.planner.markStep(plan, 'respond', 'completed');
+            options?.onProgress?.({
+                plan,
+                streamingText: undefined,
+                event: { type: 'agent:complete', payload: { response: finalResponse } }
+            });
+            this.memory.add({ role: 'assistant', content: finalResponse });
+            return {
+                response: finalResponse,
+                plan,
+                toolActivity: executor.getActivity(),
+                pendingChanges: this.getPendingChanges(),
+                context
+            };
         }
-        plan = this.planner.markStep(plan, 'execute', 'completed');
-        plan = this.planner.markStep(plan, 'diff', this.pendingChanges.length ? 'completed' : 'pending');
-        plan = this.planner.markStep(plan, 'respond', 'completed');
-        options?.onProgress?.({ plan, streamingText: undefined });
-        this.memory.add({ role: 'assistant', content: finalResponse });
-        return {
-            response: finalResponse,
-            plan,
-            toolActivity: executor.getActivity(),
-            pendingChanges: this.getPendingChanges(),
-            context
-        };
+        catch (err) {
+            options?.onProgress?.({
+                event: { type: 'agent:error', payload: { message: err.message || String(err) } }
+            });
+            throw err;
+        }
     }
     async applyPendingChanges() {
         await this.applyPendingChangeSubset(this.pendingChanges.map((change) => change.id));
@@ -137,13 +205,33 @@ class AgentOrchestrator {
         const selectedChanges = this.pendingChanges.filter((change) => selectedIds.has(change.id));
         for (const change of selectedChanges) {
             const target = (0, pathUtils_1.resolveWorkspacePath)(this.workspaceRoot, change.path);
-            if (change.type === 'delete') {
-                await vscode.workspace.fs.delete(target, { useTrash: true });
-                continue;
-            }
             const parent = vscode.Uri.file(require('path').dirname(target.fsPath));
-            await vscode.workspace.fs.createDirectory(parent);
-            await vscode.workspace.fs.writeFile(target, Buffer.from(change.nextContent ?? '', 'utf8'));
+            switch (change.type) {
+                case 'delete':
+                    await vscode.workspace.fs.delete(target, { useTrash: true });
+                    break;
+                case 'rename':
+                    if (!change.previousPath) {
+                        throw new Error(`Cannot apply rename for ${change.path}: missing previous path.`);
+                    }
+                    await vscode.workspace.fs.createDirectory(parent);
+                    await vscode.workspace.fs.rename((0, pathUtils_1.resolveWorkspacePath)(this.workspaceRoot, change.previousPath), target, { overwrite: false });
+                    break;
+                case 'mkdir':
+                    await vscode.workspace.fs.createDirectory(target);
+                    break;
+                case 'rmdir':
+                    await vscode.workspace.fs.delete(target, { recursive: true, useTrash: true });
+                    break;
+                case 'create':
+                case 'write':
+                case 'copy':
+                    await vscode.workspace.fs.createDirectory(parent);
+                    await vscode.workspace.fs.writeFile(target, Buffer.from(change.nextContent ?? '', 'utf8'));
+                    break;
+                default:
+                    throw new Error(`Unsupported pending change type: ${change.type}`);
+            }
         }
         this.discardPendingChangeSubset(changeIds);
     }
@@ -156,8 +244,9 @@ class AgentOrchestrator {
     }
     buildSystemPrompt(workspaceRoot, allowTerminalCommands) {
         return [
-            'You are Aiora Code Agent, a principal-level AI coding assistant inside VS Code.',
-            'Understand the request, plan carefully, inspect workspace context, and use tools when needed.',
+            'You are Catalyst, a production-grade autonomous AI coding assistant inside VS Code.',
+            'CORE RULE: You are NEVER allowed to claim files were edited, updated, created, deleted, renamed, applied, committed, or staged unless the corresponding tool has successfully executed and verification confirms the change.',
+            'Reasoning must never be treated as execution. You only plan and call tools; the executor performs the actions and the UI verifies/displays results.',
             'Never claim file changes were applied until the user approves them. Mutating tools only stage changes.',
             `The workspace root is ${workspaceRoot}.`,
             allowTerminalCommands

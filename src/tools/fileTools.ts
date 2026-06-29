@@ -4,6 +4,7 @@ import { BaseTool } from './base';
 import { buildUnifiedDiff } from '../utils/diffUtils';
 import { resolveWorkspacePath, toRelativeWorkspacePath } from '../utils/pathUtils';
 import { PendingWorkspaceChange, PermissionRequest, ToolExecutionContext, ToolResult } from '../types';
+import { verifyFileChange } from '../utils/verification';
 
 async function readTextFile(uri: vscode.Uri): Promise<string> {
   const data = await vscode.workspace.fs.readFile(uri);
@@ -99,17 +100,33 @@ export class WriteFileTool extends WorkspaceTool {
     const pathArg = String(args.path ?? '');
     const content = String(args.content ?? '');
     const target = resolveWorkspacePath(context.workspaceRoot, pathArg);
-    const previousContent = await readTextFile(target);
+    const previousContent = await safeReadTextFile(target);
     const pending = createPendingChange(context.workspaceRoot, target, 'write', previousContent, content, `Update ${pathArg}`);
 
-    if (!context.previewOnly) {
-      await vscode.workspace.fs.writeFile(target, Buffer.from(content, 'utf8'));
+    const verification = await verifyFileChange(
+      context.workspaceRoot,
+      pathArg,
+      async () => {
+        await vscode.workspace.fs.writeFile(target, Buffer.from(content, 'utf8'));
+      },
+      'write',
+      content,
+      context.previewOnly
+    );
+
+    if (verification.hashMatch && !context.previewOnly) {
+      return {
+        success: false,
+        content: `No changes were applied to ${pathArg}.`,
+        verification
+      };
     }
 
     return {
       success: true,
       content: context.previewOnly ? `Staged update for ${pathArg}` : `Updated ${pathArg}`,
-      workspaceChange: pending
+      workspaceChange: pending,
+      verification
     };
   }
 }
@@ -147,14 +164,30 @@ export class EditFileTool extends WorkspaceTool {
     const nextContent = previousContent.replace(search, replace);
     const pending = createPendingChange(context.workspaceRoot, target, 'write', previousContent, nextContent, `Edit ${pathArg}`);
 
-    if (!context.previewOnly) {
-      await vscode.workspace.fs.writeFile(target, Buffer.from(nextContent, 'utf8'));
+    const verification = await verifyFileChange(
+      context.workspaceRoot,
+      pathArg,
+      async () => {
+        await vscode.workspace.fs.writeFile(target, Buffer.from(nextContent, 'utf8'));
+      },
+      'write',
+      nextContent,
+      context.previewOnly
+    );
+
+    if (verification.hashMatch && !context.previewOnly) {
+      return {
+        success: false,
+        content: `No changes were applied to ${pathArg}.`,
+        verification
+      };
     }
 
     return {
       success: true,
       content: context.previewOnly ? `Staged edit for ${pathArg}` : `Edited ${pathArg}`,
-      workspaceChange: pending
+      workspaceChange: pending,
+      verification
     };
   }
 }
@@ -183,16 +216,32 @@ export class CreateFileTool extends WorkspaceTool {
     const target = resolveWorkspacePath(context.workspaceRoot, pathArg);
     const pending = createPendingChange(context.workspaceRoot, target, 'create', '', content, `Create ${pathArg}`);
 
-    if (!context.previewOnly) {
-      const parent = vscode.Uri.file(path.dirname(target.fsPath));
-      await vscode.workspace.fs.createDirectory(parent);
-      await vscode.workspace.fs.writeFile(target, Buffer.from(content, 'utf8'));
+    const verification = await verifyFileChange(
+      context.workspaceRoot,
+      pathArg,
+      async () => {
+        const parent = vscode.Uri.file(path.dirname(target.fsPath));
+        await vscode.workspace.fs.createDirectory(parent);
+        await vscode.workspace.fs.writeFile(target, Buffer.from(content, 'utf8'));
+      },
+      'create',
+      content,
+      context.previewOnly
+    );
+
+    if (verification.hashMatch && !context.previewOnly) {
+      return {
+        success: false,
+        content: `No changes were applied to ${pathArg}.`,
+        verification
+      };
     }
 
     return {
       success: true,
       content: context.previewOnly ? `Staged creation for ${pathArg}` : `Created ${pathArg}`,
-      workspaceChange: pending
+      workspaceChange: pending,
+      verification
     };
   }
 }
@@ -217,17 +266,33 @@ export class DeleteFileTool extends WorkspaceTool {
   public async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolResult> {
     const pathArg = String(args.path ?? '');
     const target = resolveWorkspacePath(context.workspaceRoot, pathArg);
-    const previousContent = await readTextFile(target);
+    const previousContent = await safeReadTextFile(target);
     const pending = createPendingChange(context.workspaceRoot, target, 'delete', previousContent, '', `Delete ${pathArg}`);
 
-    if (!context.previewOnly) {
-      await vscode.workspace.fs.delete(target, { useTrash: true });
+    const verification = await verifyFileChange(
+      context.workspaceRoot,
+      pathArg,
+      async () => {
+        await vscode.workspace.fs.delete(target, { useTrash: true });
+      },
+      'delete',
+      '',
+      context.previewOnly
+    );
+
+    if (verification.hashMatch && !context.previewOnly) {
+      return {
+        success: false,
+        content: `No changes were applied to ${pathArg}.`,
+        verification
+      };
     }
 
     return {
       success: true,
       content: context.previewOnly ? `Staged deletion for ${pathArg}` : `Deleted ${pathArg}`,
-      workspaceChange: pending
+      workspaceChange: pending,
+      verification
     };
   }
 }
@@ -269,15 +334,31 @@ export class RenameFileTool extends WorkspaceTool {
       fromArg
     );
 
-    if (!context.previewOnly) {
-      await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(destination.fsPath)));
-      await vscode.workspace.fs.rename(source, destination, { overwrite: false });
+    const verification = await verifyFileChange(
+      context.workspaceRoot,
+      toArg,
+      async () => {
+        await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(destination.fsPath)));
+        await vscode.workspace.fs.rename(source, destination, { overwrite: false });
+      },
+      'create', // treat rename as creation at target
+      previousContent,
+      context.previewOnly
+    );
+
+    if (verification.hashMatch && !context.previewOnly) {
+      return {
+        success: false,
+        content: `No changes were applied during rename to ${toArg}.`,
+        verification
+      };
     }
 
     return {
       success: true,
       content: context.previewOnly ? `Staged rename from ${fromArg} to ${toArg}` : `Renamed ${fromArg} to ${toArg}`,
-      workspaceChange: pending
+      workspaceChange: pending,
+      verification
     };
   }
 }
@@ -319,15 +400,31 @@ export class MoveFileTool extends WorkspaceTool {
       fromArg
     );
 
-    if (!context.previewOnly) {
-      await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(destination.fsPath)));
-      await vscode.workspace.fs.rename(source, destination, { overwrite: false });
+    const verification = await verifyFileChange(
+      context.workspaceRoot,
+      toArg,
+      async () => {
+        await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(destination.fsPath)));
+        await vscode.workspace.fs.rename(source, destination, { overwrite: false });
+      },
+      'create',
+      previousContent,
+      context.previewOnly
+    );
+
+    if (verification.hashMatch && !context.previewOnly) {
+      return {
+        success: false,
+        content: `No changes were applied during move to ${toArg}.`,
+        verification
+      };
     }
 
     return {
       success: true,
       content: context.previewOnly ? `Staged move from ${fromArg} to ${toArg}` : `Moved ${fromArg} to ${toArg}`,
-      workspaceChange: pending
+      workspaceChange: pending,
+      verification
     };
   }
 }
@@ -361,15 +458,31 @@ export class CopyFileTool extends WorkspaceTool {
     const content = await safeReadTextFile(source);
     const pending = createPendingChange(context.workspaceRoot, destination, 'copy', '', content, `Copy ${fromArg} to ${toArg}`, fromArg);
 
-    if (!context.previewOnly) {
-      await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(destination.fsPath)));
-      await vscode.workspace.fs.copy(source, destination, { overwrite: false });
+    const verification = await verifyFileChange(
+      context.workspaceRoot,
+      toArg,
+      async () => {
+        await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(destination.fsPath)));
+        await vscode.workspace.fs.copy(source, destination, { overwrite: false });
+      },
+      'copy',
+      content,
+      context.previewOnly
+    );
+
+    if (verification.hashMatch && !context.previewOnly) {
+      return {
+        success: false,
+        content: `No changes were applied during copy to ${toArg}.`,
+        verification
+      };
     }
 
     return {
       success: true,
       content: context.previewOnly ? `Staged copy from ${fromArg} to ${toArg}` : `Copied ${fromArg} to ${toArg}`,
-      workspaceChange: pending
+      workspaceChange: pending,
+      verification
     };
   }
 }

@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import { execSync } from 'child_process';
 import { AgentOrchestrator } from '../agent/agentOrchestrator';
 import { PermissionService } from '../services/permissionService';
 import { OpenRouterService } from '../services/openRouterService';
@@ -68,11 +70,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           break;
         case 'submitPrompt':
           if (message.payload && typeof message.payload === 'object') {
-            const data = message.payload as { prompt: string; attachedFiles?: any[]; attachedImages?: any[]; autoContext?: boolean };
-            await this.handlePrompt(data.prompt, data.attachedFiles, data.attachedImages, data.autoContext);
+            const data = message.payload as { prompt: string; attachedFiles?: any[]; attachedImages?: any[]; autoContext?: boolean; attachedMentions?: any[] };
+            await this.handlePrompt(data.prompt, data.attachedFiles, data.attachedImages, data.autoContext, data.attachedMentions);
           } else {
             await this.handlePrompt(String(message.payload ?? ''));
           }
+          break;
+        case 'queryMentions':
+          if (message.payload && typeof message.payload === 'object') {
+            const data = message.payload as { query: string };
+            await this.handleQueryMentions(data.query);
+          }
+          break;
+        case 'stopPrompt':
+          this.agent.stop();
           break;
         case 'selectFile':
           await this.handleSelectFile();
@@ -97,6 +108,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           break;
         case 'openDiffPreview':
           this.diffPreviewPanel.show(this.agent.getPendingChanges());
+          break;
+        case 'openFile':
+          if (message.payload) {
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+            if (workspaceFolder) {
+              const uri = vscode.Uri.joinPath(workspaceFolder.uri, String(message.payload));
+              vscode.commands.executeCommand('vscode.open', uri).then(undefined, () => {
+                vscode.window.showErrorMessage(`Could not open ${message.payload}`);
+              });
+            }
+          }
           break;
         case 'openSettings':
           await vscode.commands.executeCommand('workbench.action.openSettings', 'aioraCodeAgent');
@@ -190,9 +212,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     prompt: string,
     attachedFiles?: Array<{ path: string; name: string }>,
     attachedImages?: Array<{ path: string; webviewUri: string; name: string }>,
-    autoContext?: boolean
+    autoContext?: boolean,
+    attachedMentions?: Array<{ id: string; label: string; type: string; value: string }>
   ): Promise<void> {
-    if (!prompt.trim() && (!attachedFiles || !attachedFiles.length) && (!attachedImages || !attachedImages.length)) {
+    if (!prompt.trim() && (!attachedFiles || !attachedFiles.length) && (!attachedImages || !attachedImages.length) && (!attachedMentions || !attachedMentions.length)) {
       return;
     }
 
@@ -211,6 +234,56 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           formattedPrompt += `\n\n--- File: ${file.path} ---\n${content}\n--- End File ---`;
         } catch (err) {
           formattedPrompt += `\n\n--- File: ${file.path} (Failed to read content) ---`;
+        }
+      }
+    }
+
+    // Resolve rich mentions context
+    if (attachedMentions && attachedMentions.length > 0) {
+      formattedPrompt += '\n\n[Rich Mentions Context]';
+      for (const mention of attachedMentions) {
+        if (mention.type === 'file') {
+          try {
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+            const uri = workspaceFolder 
+              ? vscode.Uri.joinPath(workspaceFolder.uri, mention.value)
+              : vscode.Uri.file(mention.value);
+            const bytes = await vscode.workspace.fs.readFile(uri);
+            const content = Buffer.from(bytes).toString('utf8');
+            formattedPrompt += `\n\n--- File: ${mention.value} ---\n${content}\n--- End File ---`;
+          } catch (err) {
+            formattedPrompt += `\n\n--- File: ${mention.value} (Failed to read) ---`;
+          }
+        } else if (mention.type === 'git') {
+          try {
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (workspaceFolder) {
+              const diff = execSync('git diff', { cwd: workspaceFolder }).toString();
+              const status = execSync('git status -s', { cwd: workspaceFolder }).toString();
+              formattedPrompt += `\n\n--- Git Status ---\n${status}\n--- Git Diff ---\n${diff}\n--- End Git ---`;
+            }
+          } catch (err) {
+            formattedPrompt += `\n\n--- Git (Failed to retrieve changes) ---`;
+          }
+        } else if (mention.type === 'problems') {
+          const diagnostics = vscode.languages.getDiagnostics();
+          let problemsText = '';
+          for (const [uri, diagList] of diagnostics) {
+            if (diagList.length > 0) {
+              problemsText += `File: ${vscode.workspace.asRelativePath(uri)}\n`;
+              for (const diag of diagList) {
+                problemsText += `- [${vscode.DiagnosticSeverity[diag.severity]}] Line ${diag.range.start.line + 1}: ${diag.message}\n`;
+              }
+            }
+          }
+          formattedPrompt += `\n\n--- Diagnostics / Workspace Problems ---\n${problemsText || 'No workspace diagnostics.'}\n--- End Problems ---`;
+        } else if (mention.type === 'terminal') {
+          const activeTerminal = vscode.window.activeTerminal;
+          formattedPrompt += `\n\n--- Active Terminal ---\nName: ${activeTerminal ? activeTerminal.name : 'None'}\n--- End Terminal ---`;
+        } else if (mention.type === 'workspace') {
+          const files = await vscode.workspace.findFiles('**/*', '**/{node_modules,.git,out,dist}/**', 50);
+          const filePaths = files.map(f => vscode.workspace.asRelativePath(f));
+          formattedPrompt += `\n\n--- Workspace Index ---\nFiles available:\n${filePaths.join('\n')}\n--- End Workspace Index ---`;
         }
       }
     }
@@ -258,6 +331,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             streamingText: progress.streamingText ?? this.state.streamingText
           };
           this.postState();
+
+          if (progress.event) {
+            this.view?.webview.postMessage({
+              type: 'agentEvent',
+              payload: progress.event
+            });
+          }
         }
       });
       this.messages.push({ role: 'assistant', content: result.response });
@@ -384,9 +464,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   private async setApiKey(): Promise<void> {
+    const settings = await this.openRouterService.getSettings();
+    const providerLabel = this.openRouterService.getProviderOptions().find((provider) => provider.id === settings.provider)?.label ?? settings.provider;
     const apiKey = await vscode.window.showInputBox({
-      title: 'OpenRouter API Key',
-      prompt: 'Enter your OpenRouter API key',
+      title: `${providerLabel} API Key`,
+      prompt: `Enter your ${providerLabel} API key`,
       password: true,
       ignoreFocusOut: true
     });
@@ -400,7 +482,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.state.connectionStatus = 'idle';
     this.state.connectionMessage = 'API key saved.';
     this.postState();
-    void vscode.window.showInformationMessage('OpenRouter API key saved securely.');
+    void vscode.window.showInformationMessage(`${providerLabel} API key saved securely.`);
   }
 
   private async setProvider(provider: string): Promise<void> {
@@ -459,6 +541,61 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     await this.permissionService.setMode(permissionId, mode);
     this.state.permissions = this.permissionService.getRules();
     this.postState();
+  }
+
+  private async handleQueryMentions(query: string): Promise<void> {
+    const results: Array<{ id: string; label: string; detail?: string; type: string; value: string; size?: number; mtime?: number }> = [];
+
+    // System mentions
+    const systemMentions = [
+      { id: 'workspace', label: '@workspace', detail: 'Codebase context snapshot', type: 'workspace', value: '' },
+      { id: 'git', label: '@git', detail: 'Active changes (git diff/status)', type: 'git', value: '' },
+      { id: 'problems', label: '@problems', detail: 'Workspace errors & warnings', type: 'problems', value: '' },
+      { id: 'terminal', label: '@terminal', detail: 'Active terminal details', type: 'terminal', value: '' }
+    ];
+
+    const normalizedQuery = query.toLowerCase().trim();
+
+    const q = normalizedQuery.startsWith('@') ? normalizedQuery.slice(1) : normalizedQuery;
+    systemMentions.forEach(mention => {
+      if (mention.id.includes(q)) {
+        results.push(mention);
+      }
+    });
+
+    // Workspace files
+    try {
+      const globPattern = q ? `**/*${q}*` : '**/*';
+      const files = await vscode.workspace.findFiles(globPattern, '**/{node_modules,.git,out,dist}/**', 30);
+      for (const file of files) {
+        const relativePath = vscode.workspace.asRelativePath(file).replace(/\\/g, '/');
+        
+        let size = 0;
+        let mtime = Date.now();
+        try {
+          const stats = fs.statSync(file.fsPath);
+          size = stats.size;
+          mtime = stats.mtimeMs;
+        } catch (_) {}
+
+        results.push({
+          id: `file:${relativePath}`,
+          label: relativePath.split('/').pop() || relativePath,
+          detail: relativePath,
+          type: 'file',
+          value: relativePath,
+          size,
+          mtime
+        });
+      }
+    } catch (err) {
+      console.error('Error querying mentions:', err);
+    }
+
+    this.view?.webview.postMessage({
+      type: 'mentionsResults',
+      payload: results
+    });
   }
 
   private postState(): void {

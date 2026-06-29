@@ -62,11 +62,21 @@ export interface PermissionRequest {
   reason: string;
 }
 
+export interface VerificationResult {
+  success: boolean;
+  hashMatch: boolean;
+  originalHash: string;
+  updatedHash: string;
+  linesChanged: number;
+  diff: string;
+}
+
 export interface ToolResult {
   success: boolean;
   content: string;
   data?: unknown;
   workspaceChange?: PendingWorkspaceChange;
+  verification?: VerificationResult;
 }
 
 export interface ToolActivityEntry {
@@ -80,6 +90,12 @@ export interface PlanStep {
   id: string;
   title: string;
   status: 'pending' | 'in_progress' | 'completed';
+}
+
+export interface TimelineStep {
+  id: string;
+  label: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'skipped';
 }
 
 export type PendingWorkspaceChangeType = 'create' | 'write' | 'delete' | 'rename' | 'copy' | 'mkdir' | 'rmdir';
@@ -130,11 +146,31 @@ export interface AgentRunResult {
   context: AgentContextSnapshot;
 }
 
+export interface AgentEvent {
+  type:
+    | 'agent:start'
+    | 'agent:thinking:start'
+    | 'agent:thinking:update'
+    | 'agent:tool:start'
+    | 'agent:file:read'
+    | 'agent:file:edit'
+    | 'agent:file:create'
+    | 'agent:file:delete'
+    | 'agent:file:rename'
+    | 'agent:tool:end'
+    | 'agent:diff'
+    | 'agent:verification'
+    | 'agent:complete'
+    | 'agent:error';
+  payload?: any;
+}
+
 export interface AgentRunProgress {
   streamingText?: string;
   toolActivity?: ToolActivityEntry[];
   pendingChanges?: PendingWorkspaceChange[];
   plan?: PlanStep[];
+  event?: AgentEvent;
 }
 
 export interface AgentRunOptions {
@@ -192,6 +228,9 @@ export interface WebviewState {
   maxContextFiles?: number;
   allowTerminalCommands?: boolean;
   permissionsNoticeDismissed?: boolean;
+  agentStatus?: 'idle' | 'thinking' | 'planning' | 'searching' | 'editing' | 'applying_changes' | 'generating_diff' | 'completed';
+  timeline?: TimelineStep[];
+  showThinkingAnimation?: boolean;
 }
 
 export interface OpenRouterToolDefinition {

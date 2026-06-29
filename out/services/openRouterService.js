@@ -35,12 +35,12 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OpenRouterService = void 0;
 const vscode = __importStar(require("vscode"));
-const SECRET_KEY_NAME = 'aiora.openRouterApiKey';
+const LEGACY_SECRET_KEY_NAME = 'aiora.openRouterApiKey';
 const PROVIDER_OPTIONS = [
     { id: 'openrouter', label: 'OpenRouter', note: 'Fully validated in this extension.' },
     { id: 'openai', label: 'OpenAI Compatible', note: 'Use an OpenAI-compatible base URL.' },
-    { id: 'anthropic', label: 'Anthropic Compatible', note: 'Requires a compatible adapter endpoint.' },
-    { id: 'google', label: 'Google Compatible', note: 'Requires a compatible adapter endpoint.' },
+    { id: 'anthropic', label: 'Anthropic', note: 'Use an Anthropic-compatible gateway endpoint.' },
+    { id: 'google', label: 'Google', note: 'Use a Gemini-compatible gateway endpoint.' },
     { id: 'ollama', label: 'Ollama', note: 'Use a local OpenAI-compatible endpoint.' },
     { id: 'groq', label: 'Groq', note: 'Use an OpenAI-compatible Groq endpoint.' },
     { id: 'deepseek', label: 'DeepSeek', note: 'Use an OpenAI-compatible DeepSeek endpoint.' },
@@ -72,6 +72,19 @@ const PROVIDER_MODELS = {
     xai: ['grok-3-mini', 'grok-3'],
     agentrouter: ['agentrouter/default']
 };
+const DEFAULT_BASE_URLS = {
+    openrouter: 'https://openrouter.ai/api/v1',
+    openai: 'https://api.openai.com/v1',
+    anthropic: 'https://api.anthropic.com/v1',
+    google: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    ollama: 'http://localhost:11434/v1',
+    groq: 'https://api.groq.com/openai/v1',
+    deepseek: 'https://api.deepseek.com',
+    qwen: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+    mistral: 'https://api.mistral.ai/v1',
+    xai: 'https://api.x.ai/v1',
+    agentrouter: 'https://api.agentrouter.com/v1'
+};
 class OpenRouterService {
     context;
     constructor(context) {
@@ -79,23 +92,29 @@ class OpenRouterService {
     }
     async getSettings() {
         const config = vscode.workspace.getConfiguration('aioraCodeAgent');
-        const apiKey = config.get('openRouterApiKey') || (await this.context.secrets.get(SECRET_KEY_NAME)) || '';
+        const provider = config.get('provider', 'openrouter');
+        const providerSecret = `aiora.${provider}.apiKey`;
+        const legacyApiKey = await this.context.secrets.get(LEGACY_SECRET_KEY_NAME);
+        const apiKey = config.get('openRouterApiKey') || (await this.context.secrets.get(providerSecret)) || legacyApiKey || '';
+        const configuredBaseUrl = config.get('baseUrl');
         return {
-            provider: config.get('provider', 'openrouter'),
+            provider,
             apiKey,
             model: config.get('model', 'openrouter/free'),
-            baseUrl: config.get('baseUrl', 'https://openrouter.ai/api/v1'),
+            baseUrl: configuredBaseUrl || this.getDefaultBaseUrl(provider),
             maxIterations: config.get('maxIterations', 6),
             maxContextFiles: config.get('maxContextFiles', 6),
             allowTerminalCommands: config.get('allowTerminalCommands', true)
         };
     }
     async storeApiKey(apiKey) {
-        await this.context.secrets.store(SECRET_KEY_NAME, apiKey.trim());
+        const settings = await this.getSettings();
+        await this.context.secrets.store(`aiora.${settings.provider}.apiKey`, apiKey.trim());
     }
     async updateProvider(provider) {
         const config = vscode.workspace.getConfiguration('aioraCodeAgent');
         await config.update('provider', provider, vscode.ConfigurationTarget.Workspace);
+        await config.update('baseUrl', this.getDefaultBaseUrl(provider), vscode.ConfigurationTarget.Workspace);
     }
     async updateModel(model) {
         const config = vscode.workspace.getConfiguration('aioraCodeAgent');
@@ -111,19 +130,17 @@ class OpenRouterService {
     getModelOptions(provider) {
         return [...(PROVIDER_MODELS[provider] ?? PROVIDER_MODELS.openrouter)];
     }
+    getDefaultBaseUrl(provider) {
+        return DEFAULT_BASE_URLS[provider] ?? DEFAULT_BASE_URLS.openrouter;
+    }
     async testConnection() {
         const settings = await this.getSettings();
         if (!settings.apiKey) {
             return { ok: false, message: 'Missing API key.' };
         }
-        const response = await fetch(`${settings.baseUrl}/chat/completions`, {
+        const response = await fetch(this.getChatCompletionsUrl(settings), {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${settings.apiKey}`,
-                'Content-Type': 'application/json',
-                'HTTP-Referer': 'https://github.com/aiora/code-agent',
-                'X-Title': 'Aiora Code Agent'
-            },
+            headers: this.getHeaders(settings),
             body: JSON.stringify({
                 model: settings.model,
                 messages: [{ role: 'user', content: 'Reply with exactly OK' }]
@@ -140,149 +157,61 @@ class OpenRouterService {
             message: content ? `Connected successfully. Sample reply: ${content}` : 'Connected successfully.'
         };
     }
-    async chat(messages, tools, onTextDelta) {
+    async chat(messages, tools, onTextDelta, signal) {
         if (onTextDelta) {
-            return this.chatStream(messages, tools, onTextDelta);
+            return this.chatStream(messages, tools, onTextDelta, signal);
         }
         const settings = await this.getSettings();
         if (!settings.apiKey) {
-            throw new Error('Missing OpenRouter API key. Run "Aiora Code Agent: Configure OpenRouter API Key".');
+            throw new Error(`Missing ${settings.provider} API key. Open Aiora Code Agent settings and save an API key.`);
         }
         const body = {
             model: settings.model,
-            messages: messages.map((message) => {
-                if (message.role === 'assistant' && message.toolCalls) {
-                    return {
-                        role: message.role,
-                        content: message.content,
-                        tool_calls: message.toolCalls.map((toolCall) => ({
-                            id: toolCall.id,
-                            type: 'function',
-                            function: {
-                                name: toolCall.name,
-                                arguments: JSON.stringify(toolCall.arguments)
-                            }
-                        }))
-                    };
-                }
-                if (message.role === 'tool') {
-                    return {
-                        role: 'tool',
-                        content: message.content,
-                        tool_call_id: message.toolCallId,
-                        name: message.name
-                    };
-                }
-                if (message.role === 'user' && message.images?.length) {
-                    const contentParts = [{ type: 'text', text: message.content }];
-                    for (const img of message.images) {
-                        contentParts.push({
-                            type: 'image_url',
-                            image_url: { url: img }
-                        });
-                    }
-                    return {
-                        role: 'user',
-                        content: contentParts
-                    };
-                }
-                return {
-                    role: message.role,
-                    content: message.content
-                };
-            }),
+            messages: this.toOpenAiMessages(messages),
             tools,
             tool_choice: tools.length ? 'auto' : undefined
         };
-        const response = await fetch(`${settings.baseUrl}/chat/completions`, {
+        const response = await fetch(this.getChatCompletionsUrl(settings), {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${settings.apiKey}`,
-                'Content-Type': 'application/json',
-                'HTTP-Referer': 'https://github.com/aiora/code-agent',
-                'X-Title': 'Aiora Code Agent'
-            },
-            body: JSON.stringify(body)
+            headers: this.getHeaders(settings),
+            body: JSON.stringify(body),
+            signal
         });
         if (!response.ok) {
             const text = await response.text();
-            throw new Error(`OpenRouter request failed (${response.status}): ${text}`);
+            throw new Error(`${settings.provider} request failed (${response.status}): ${text}`);
         }
         const json = (await response.json());
         const message = json.choices?.[0]?.message;
         if (!message) {
-            throw new Error('OpenRouter response did not include a message.');
+            throw new Error(`${settings.provider} response did not include a message.`);
         }
         return message;
     }
-    async chatStream(messages, tools, onTextDelta) {
+    async chatStream(messages, tools, onTextDelta, signal) {
         const settings = await this.getSettings();
         if (!settings.apiKey) {
-            throw new Error('Missing OpenRouter API key. Run "Aiora Code Agent: Configure OpenRouter API Key".');
+            throw new Error(`Missing ${settings.provider} API key. Open Aiora Code Agent settings and save an API key.`);
         }
         const body = {
             model: settings.model,
-            messages: messages.map((message) => {
-                if (message.role === 'assistant' && message.toolCalls) {
-                    return {
-                        role: message.role,
-                        content: message.content,
-                        tool_calls: message.toolCalls.map((toolCall) => ({
-                            id: toolCall.id,
-                            type: 'function',
-                            function: {
-                                name: toolCall.name,
-                                arguments: JSON.stringify(toolCall.arguments)
-                            }
-                        }))
-                    };
-                }
-                if (message.role === 'tool') {
-                    return {
-                        role: 'tool',
-                        content: message.content,
-                        tool_call_id: message.toolCallId,
-                        name: message.name
-                    };
-                }
-                if (message.role === 'user' && message.images?.length) {
-                    const contentParts = [{ type: 'text', text: message.content }];
-                    for (const img of message.images) {
-                        contentParts.push({
-                            type: 'image_url',
-                            image_url: { url: img }
-                        });
-                    }
-                    return {
-                        role: 'user',
-                        content: contentParts
-                    };
-                }
-                return {
-                    role: message.role,
-                    content: message.content
-                };
-            }),
+            messages: this.toOpenAiMessages(messages),
             tools,
             tool_choice: tools.length ? 'auto' : undefined,
             stream: true
         };
-        const response = await fetch(`${settings.baseUrl}/chat/completions`, {
+        const response = await fetch(this.getChatCompletionsUrl(settings), {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${settings.apiKey}`,
-                'Content-Type': 'application/json',
-                'HTTP-Referer': 'https://github.com/aiora/code-agent',
-                'X-Title': 'Aiora Code Agent'
-            },
-            body: JSON.stringify(body)
+            headers: this.getHeaders(settings),
+            body: JSON.stringify(body),
+            signal
         });
         if (!response.ok) {
             const text = await response.text();
-            throw new Error(`OpenRouter request failed (${response.status}): ${text}`);
+            throw new Error(`${settings.provider} request failed (${response.status}): ${text}`);
         }
         if (!response.body) {
-            throw new Error('OpenRouter streaming response did not include a body.');
+            throw new Error(`${settings.provider} streaming response did not include a body.`);
         }
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -353,6 +282,64 @@ class OpenRouterService {
             }));
         }
         return message;
+    }
+    getChatCompletionsUrl(settings) {
+        const baseUrl = settings.baseUrl.replace(/\/+$/, '');
+        return baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
+    }
+    getHeaders(settings) {
+        const headers = {
+            'Authorization': `Bearer ${settings.apiKey}`,
+            'Content-Type': 'application/json'
+        };
+        if (settings.provider === 'openrouter') {
+            headers['HTTP-Referer'] = 'https://github.com/aiora/code-agent';
+            headers['X-Title'] = 'Aiora Code Agent';
+        }
+        return headers;
+    }
+    toOpenAiMessages(messages) {
+        return messages.map((message) => {
+            if (message.role === 'assistant' && message.toolCalls) {
+                return {
+                    role: message.role,
+                    content: message.content,
+                    tool_calls: message.toolCalls.map((toolCall) => ({
+                        id: toolCall.id,
+                        type: 'function',
+                        function: {
+                            name: toolCall.name,
+                            arguments: JSON.stringify(toolCall.arguments)
+                        }
+                    }))
+                };
+            }
+            if (message.role === 'tool') {
+                return {
+                    role: 'tool',
+                    content: message.content,
+                    tool_call_id: message.toolCallId,
+                    name: message.name
+                };
+            }
+            if (message.role === 'user' && message.images?.length) {
+                const contentParts = [{ type: 'text', text: message.content }];
+                for (const img of message.images) {
+                    contentParts.push({
+                        type: 'image_url',
+                        image_url: { url: img }
+                    });
+                }
+                return {
+                    role: 'user',
+                    content: contentParts
+                };
+            }
+            return {
+                role: message.role,
+                content: message.content
+            };
+        });
     }
 }
 exports.OpenRouterService = OpenRouterService;

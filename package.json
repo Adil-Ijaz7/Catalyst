@@ -1,9 +1,10 @@
 {
   "name": "aiora-code-agent",
   "displayName": "Aiora Code Agent",
-  "description": "Production-ready MVP AI coding assistant for VS Code powered by OpenRouter.",
-  "version": "0.2.0",
+  "description": "Production-ready MVP AI coding assistant for VS Code with multi-provider model support.",
+  "version": "0.3.0",
   "publisher": "aiora",
+  "icon": "media/catalyst-icon.png",
   "license": "MIT",
   "files": [
     "out/**",
@@ -66,7 +67,7 @@
         {
           "id": "aioraCodeAgentSidebar",
           "title": "Aiora",
-          "icon": "media/aiora-icon.svg"
+          "icon": "media/catalyst-sidebar-icon.svg"
         }
       ]
     },
@@ -96,7 +97,7 @@
             "google/gemini-2.5-pro",
             "deepseek/deepseek-chat"
           ],
-          "description": "OpenRouter model used by Aiora Code Agent."
+          "description": "Model used by Aiora Code Agent for the selected provider."
         },
         "aioraCodeAgent.provider": {
           "type": "string",
@@ -114,12 +115,12 @@
             "xai",
             "agentrouter"
           ],
-          "description": "Model provider abstraction used by Aiora Code Agent. The current MVP runtime is implemented for OpenRouter."
+          "description": "Model provider used by Aiora Code Agent."
         },
         "aioraCodeAgent.baseUrl": {
           "type": "string",
           "default": "https://openrouter.ai/api/v1",
-          "description": "Base URL for the OpenRouter API."
+          "description": "Base URL for the selected provider API."
         },
         "aioraCodeAgent.maxIterations": {
           "type": "number",
