@@ -1,6 +1,6 @@
-# Catalyst
+# Aiora Code Agent
 
- Catalyst is a production-ready MVP VS Code extension that brings an AI-powered coding agent into your workspace. It combines a modular TypeScript backend, multi-provider model routing (OpenRouter-first), a responsive webview chat experience, staged file mutations, terminal tooling, diagnostics access, and diff approval before applying changes.
+Aiora Code Agent is a production-ready MVP VS Code extension that brings an AI-powered coding agent into your workspace. It combines a modular TypeScript backend, multi-provider model routing (OpenRouter-first), a responsive webview chat experience, staged file mutations, terminal tooling, diagnostics access, and diff approval before applying changes.
 
 ## Features
 
@@ -35,15 +35,16 @@
   - `permissionService.ts`: granular permission rules with allow / ask / deny modes
 - `src/tools/`:
   - `base.ts`: abstract base class for all tools
-  - `fileTools.ts`: 14 file and directory tools (read, write, edit, create, delete, rename, move, copy, mkdir, rmdir, search, glob, list)
+  - `fileTools.ts`: 13 file and directory tools (read, write, edit, create, delete, rename, move, copy, mkdir, rmdir, search, glob, list)
   - `terminalTool.ts`: terminal, install, test, build, and log tools
   - `gitTools.ts`: git status, diff, commit, branch, push, and pull tools
   - `diagnosticsTool.ts`: VS Code diagnostics reader
-  - `index.ts`: `createDefaultTools()` factory registering all 24 built-in tools
+  - `index.ts`: `createDefaultTools()` factory registering all 25 built-in tools
 - `src/utils/`:
   - `pathUtils.ts`: workspace-relative path resolution and safety
   - `commandValidator.ts`: terminal command validation
   - `diffUtils.ts`: unified diff generation for staged changes
+  - `verification.ts`: workspace change verification for staged mutations
 - `src/ui/`:
   - `chatViewProvider.ts`: sidebar webview provider with full state management
   - `diffPreviewPanel.ts`: standalone diff preview webview panel
@@ -59,48 +60,51 @@
 
 ```text
 .
-├── media/
-│   ├── aiora-icon.svg
-│   ├── main.css
-│   └── main.js
-├── src/
-│   ├── agent/
-│   │   ├── agentOrchestrator.ts
-│   │   ├── contextManager.ts
-│   │   ├── conversationMemory.ts
-│   │   ├── planner.ts
-│   │   ├── toolExecutor.ts
-│   │   └── toolRegistry.ts
-│   ├── services/
-│   │   ├── openRouterService.ts
-│   │   └── permissionService.ts
-│   ├── tools/
-│   │   ├── base.ts
-│   │   ├── diagnosticsTool.ts
-│   │   ├── fileTools.ts
-│   │   ├── gitTools.ts
-│   │   ├── index.ts
-│   │   └── terminalTool.ts
-│   ├── ui/
-│   │   ├── chatViewProvider.ts
-│   │   ├── diffPreviewPanel.ts
-│   │   └── pendingChangeDiffProvider.ts
-│   ├── utils/
-│   │   ├── commandValidator.ts
-│   │   ├── diffUtils.ts
-│   │   └── pathUtils.ts
-│   ├── test/
-│   │   ├── runTest.ts
-│   │   └── suite/
-│   │       ├── extension.test.ts
-│   │       └── index.ts
-│   ├── extension.ts
-│   └── types.ts
-├── test-fixtures/workspace/
-├── package.json
-├── tsconfig.json
-├── LICENSE
-└── README.md
+|-- media/
+|   |-- aiora-icon.svg
+|   |-- catalyst-icon.png
+|   |-- catalyst-sidebar-icon.svg
+|   |-- main.css
+|   `-- main.js
+|-- src/
+|   |-- agent/
+|   |   |-- agentOrchestrator.ts
+|   |   |-- contextManager.ts
+|   |   |-- conversationMemory.ts
+|   |   |-- planner.ts
+|   |   |-- toolExecutor.ts
+|   |   `-- toolRegistry.ts
+|   |-- services/
+|   |   |-- openRouterService.ts
+|   |   `-- permissionService.ts
+|   |-- tools/
+|   |   |-- base.ts
+|   |   |-- diagnosticsTool.ts
+|   |   |-- fileTools.ts
+|   |   |-- gitTools.ts
+|   |   |-- index.ts
+|   |   `-- terminalTool.ts
+|   |-- ui/
+|   |   |-- chatViewProvider.ts
+|   |   |-- diffPreviewPanel.ts
+|   |   `-- pendingChangeDiffProvider.ts
+|   |-- utils/
+|   |   |-- commandValidator.ts
+|   |   |-- diffUtils.ts
+|   |   |-- pathUtils.ts
+|   |   `-- verification.ts
+|   |-- test/
+|   |   |-- runTest.ts
+|   |   `-- suite/
+|   |       |-- extension.test.ts
+|   |       `-- index.ts
+|   |-- extension.ts
+|   `-- types.ts
+|-- test-fixtures/workspace/
+|-- package.json
+|-- tsconfig.json
+|-- LICENSE
+`-- README.md
 ```
 
 ## Configuration
@@ -246,7 +250,7 @@ Configurable permissions include:
 
 Permission modes are persisted per-workspace in VS Code state.
 
-## Built-in Tools (24)
+## Built-in Tools (25)
 
 ### File & Directory Tools
 | Tool | Description |

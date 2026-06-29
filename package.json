@@ -2,7 +2,7 @@
   "name": "aiora-code-agent",
   "displayName": "Aiora Code Agent",
   "description": "Production-ready MVP AI coding assistant for VS Code with multi-provider model support.",
-  "version": "0.3.0",
+  "version": "0.3.6",
   "publisher": "aiora",
   "icon": "media/catalyst-icon.png",
   "license": "MIT",

@@ -378,11 +378,13 @@ class ChatViewProvider {
             this.postState();
         }
         catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            const wasAborted = /aborted|stopped by user/i.test(message);
             this.state = {
                 ...this.state,
                 busy: false,
                 streamingText: undefined,
-                error: error instanceof Error ? error.message : String(error)
+                error: wasAborted ? undefined : message
             };
             this.postState();
         }
@@ -584,9 +586,14 @@ class ChatViewProvider {
         });
     }
     postState() {
+        const pendingChanges = this.agent.getPendingChanges();
+        this.state.pendingChanges = pendingChanges;
         this.view?.webview.postMessage({
             type: 'state',
-            payload: this.state
+            payload: {
+                ...this.state,
+                pendingChanges
+            }
         });
     }
     getHtml(webview) {

@@ -112,11 +112,12 @@ class AgentOrchestrator {
                 }, signal);
                 const assistantMessage = this.toAssistantMessage(response);
                 workingMessages.push(assistantMessage);
-                if (assistantMessage.content) {
+                if (assistantMessage.content && !assistantMessage.toolCalls?.length) {
                     finalResponse += (hasResponded ? '\n\n' : '') + assistantMessage.content;
                     hasResponded = true;
                 }
                 if (assistantMessage.toolCalls?.length) {
+                    options?.onProgress?.({ streamingText: undefined });
                     for (const call of assistantMessage.toolCalls) {
                         // Emit tool start and specific file operation events
                         options?.onProgress?.({ event: { type: 'agent:tool:start', payload: { name: call.name, args: call.arguments } } });
@@ -171,7 +172,9 @@ class AgentOrchestrator {
                 break;
             }
             if (!hasResponded) {
-                finalResponse = 'Task completed with no output.';
+                finalResponse = this.pendingChanges.length
+                    ? `Staged ${this.pendingChanges.length} file change${this.pendingChanges.length === 1 ? '' : 's'} for review.`
+                    : 'Task completed without a final model response.';
             }
             plan = this.planner.markStep(plan, 'execute', 'completed');
             plan = this.planner.markStep(plan, 'diff', this.pendingChanges.length ? 'completed' : 'pending');
@@ -248,6 +251,9 @@ class AgentOrchestrator {
             'CORE RULE: You are NEVER allowed to claim files were edited, updated, created, deleted, renamed, applied, committed, or staged unless the corresponding tool has successfully executed and verification confirms the change.',
             'Reasoning must never be treated as execution. You only plan and call tools; the executor performs the actions and the UI verifies/displays results.',
             'Never claim file changes were applied until the user approves them. Mutating tools only stage changes.',
+            'When the user asks you to update, fix, refactor, create, delete, or modify files, you must call the appropriate mutating tool before giving a final answer.',
+            'Do not end a response with unfinished process language such as "let me check", "let me verify", "now I will", or "I should"; either call a tool or provide a final concise result.',
+            'If you discover documentation or code inaccuracies during analysis, stage the correction with a file tool instead of only describing the issue.',
             `The workspace root is ${workspaceRoot}.`,
             allowTerminalCommands
                 ? 'Validated terminal commands are available when genuinely needed.'

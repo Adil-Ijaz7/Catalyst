@@ -84,6 +84,9 @@
       }
     } else if (ev.type === 'agent:diff') {
       state.agentStatus = 'generating_diff';
+      if (Array.isArray(ev.payload)) {
+        state.pendingChanges = ev.payload;
+      }
       updateTimelineStep('verifying', 'completed');
       updateTimelineStep('diffing', 'in_progress');
     } else if (ev.type === 'agent:complete') {
@@ -135,7 +138,7 @@
   }
 
   function renderActivityTimeline() {
-    if (!state.timeline.length) return '';
+    if (!state.timeline.length || state.pendingChanges?.length) return '';
     const stepsHtml = state.timeline.map(step => {
       let icon = 'pending';
       if (step.status === 'in_progress') {
@@ -579,9 +582,6 @@
     }
 
     const filesHtml = state.pendingChanges.map(change => {
-      const isExpanded = state.expandedDiffs[change.id] || false;
-      const diffViewer = isExpanded ? renderGitDiffViewer(change) : '';
-      
       let additions = 0;
       let deletions = 0;
       if (change.diff) {
@@ -597,18 +597,19 @@
       ` : '';
 
       return `
-        <div class="file-row-container">
-          <div class="file-row review-file-row" data-action="toggleDiff" data-change-id="${change.id}">
-            <div class="file-name" style="display: flex; align-items: center; gap: 6px; font-size: 12px;">
-              <span style="color: #3b82f6; font-weight: bold; font-size: 10px;">${getFileIcon(change.path)}</span>
-              <span style="font-weight: 500;">${escapeHtml(change.path)}</span>
-            </div>
-            <div class="file-stats" style="display: flex; align-items: center; gap: 8px;">
-              ${statsHtml}
-              <span class="diff-toggle-label">${isExpanded ? 'Hide' : 'Review'}</span>
+        <div class="file-row-container review-file-card" data-action="openChangeDiff" data-change-id="${change.id}" title="Open VS Code diff editor">
+          <div class="review-file-main">
+            <div class="file-badge">${getFileIcon(change.path)}</div>
+            <div class="review-file-meta">
+              <div class="review-file-path">${escapeHtml(change.path)}</div>
+              <div class="review-file-subtitle">Click to review diff in editor</div>
             </div>
           </div>
-          ${diffViewer}
+          <div class="file-review-actions">
+            <div class="file-stats">${statsHtml}</div>
+            <button class="primary compact" data-action="applySingleChange" data-change-id="${change.id}">Approve</button>
+            <button class="ghost compact" data-action="discardSingleChange" data-change-id="${change.id}">Discard</button>
+          </div>
         </div>
       `;
     }).join('');
@@ -622,6 +623,7 @@
       }
       return acc;
     }, { additions: 0, deletions: 0 });
+    const changedFiles = state.pendingChanges.map(change => change.path).join(', ');
 
     return `
       <div class="action-card review-card">
@@ -804,9 +806,11 @@
           ${renderMessages()}
           ${renderActivityTimeline()}
           ${renderThinkingAnimation()}
-          ${renderPendingChanges()}
           ${renderPermissions()}
           ${state.error ? `<div class="message user" style="border-color: var(--danger); color: var(--danger);">${escapeHtml(state.error)}</div>` : ''}
+          <div class="review-shelf">
+            ${renderPendingChanges()}
+          </div>
         </div>
 
         <div class="composer-container" style="position: relative;">
@@ -915,7 +919,8 @@
 
       // Bind prompt submittal with attachments support
       app.querySelectorAll('[data-action]').forEach((button) => {
-        button.addEventListener('click', () => {
+        button.addEventListener('click', (event) => {
+          event.stopPropagation();
           const action = button.getAttribute('data-action');
           if (action === 'submitPrompt') {
             const val = document.getElementById('prompt').value;
@@ -948,6 +953,21 @@
 
           if (action === 'stopPrompt') {
             vscode.postMessage({ type: 'stopPrompt' });
+            return;
+          }
+
+          if (action === 'openChangeDiff') {
+            vscode.postMessage({ type: 'openChangeDiff', payload: button.getAttribute('data-change-id') });
+            return;
+          }
+
+          if (action === 'applySingleChange') {
+            vscode.postMessage({ type: 'applySingleChange', payload: button.getAttribute('data-change-id') });
+            return;
+          }
+
+          if (action === 'discardSingleChange') {
+            vscode.postMessage({ type: 'discardSingleChange', payload: button.getAttribute('data-change-id') });
             return;
           }
 
@@ -994,6 +1014,15 @@
           const changeId = el.getAttribute('data-change-id');
           state.expandedDiffs[changeId] = !state.expandedDiffs[changeId];
           render();
+        });
+      });
+
+      app.querySelectorAll('.review-file-card').forEach((el) => {
+        el.addEventListener('click', (e) => {
+          if (e.target.closest('button')) {
+            return;
+          }
+          vscode.postMessage({ type: 'openChangeDiff', payload: el.getAttribute('data-change-id') });
         });
       });
 
